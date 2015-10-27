@@ -1,5 +1,4 @@
 require 'nn'
-require 'dp'
 
 --[[command line arguments, example '$> th nntest.lua --batchSize 128 --momentum 0.5' ]]--
 cmd = torch.CmdLine()
@@ -26,8 +25,7 @@ cmd:option('--zca', false, 'apply Zero-Component Analysis whitening')
 cmd:option('--progress', false, 'display progress bar')
 cmd:option('--silent', false, 'dont print anything to stdout')
 opt = cmd:parse(arg or {})
-opt.schedule = dp.returnString(opt.schedule)
-opt.hiddenSize = dp.returnString(opt.hiddenSize)
+
 if not opt.silent then
    table.print(opt)
 end
@@ -54,16 +52,6 @@ end
 testnet = BuildLeNet(1,32)
 criterion = nn.CrossEntropyCriterion()
 
-input_preprocess = {}
-table.insert(input_preprocess, dp.Standardize())
-ds = dp.Cifar10{input_preprocess = input_preprocess}
-
-
-
-
-
-
---[[
 input_ = torch.rand(1,32,32) --an image of the digit 3
 target = 3 --class for the digit 3
 zOutput_ = testnet:forward(input_) --net prediction for image of digit 3, after softmax activation
@@ -74,8 +62,6 @@ dErr_dz_ = criterion:backward(zOutput_,target) --network error grad vector at th
 testnet:zeroGradParameters()
 gradInput_ = testnet:backward(input_,dErr_dz_) --backprop using chain rule
 testnet:updateParameters(learningRate)
-]]--
-
 
 
 
