@@ -1,35 +1,112 @@
+require 'torch'
 require 'nn'
+require 'image'
 
 --[[command line arguments, example '$> th nntest.lua --batchSize 128 --momentum 0.5' ]]--
-cmd = torch.CmdLine()
-cmd:option('--learningRate', 0.1, 'learning rate at t=0')
-cmd:option('--lrDecay', 'linear', 'type of learning rate decay : adaptive | linear | schedule | none')
-cmd:option('--minLR', 0.00001, 'minimum learning rate')
-cmd:option('--saturateEpoch', 300, 'epoch at which linear decayed LR will reach minLR')
-cmd:option('--schedule', '{}', 'learning rate schedule')
-cmd:option('--maxWait', 4, 'maximum number of epochs to wait for a new minima to be found. After that, the learning rate is decayed by decayFactor.')
-cmd:option('--decayFactor', 0.001, 'factor by which learning rate is decayed for adaptive decay.')
-cmd:option('--maxOutNorm', 1, 'max norm each layers output neuron weights')
-cmd:option('--momentum', 0, 'momentum')
-cmd:option('--hiddenSize', '{200,200}', 'number of hidden units per layer')
-cmd:option('--batchSize', 32, 'number of examples per batch')
-cmd:option('--cuda', false, 'use CUDA')
-cmd:option('--useDevice', 1, 'sets the device (GPU) to use')
-cmd:option('--maxEpoch', 100, 'maximum number of epochs to run')
-cmd:option('--maxTries', 30, 'maximum number of epochs to try to find a better local minima for early-stopping')
-cmd:option('--dropout', false, 'apply dropout on hidden neurons')
-cmd:option('--batchNorm', false, 'use batch normalization. dropout is mostly redundant with this')
-cmd:option('--dataset', 'Mnist', 'which dataset to use : Mnist | NotMnist | Cifar10 | Cifar100')
-cmd:option('--standardize', false, 'apply Standardize preprocessing')
-cmd:option('--zca', false, 'apply Zero-Component Analysis whitening')
-cmd:option('--progress', false, 'display progress bar')
-cmd:option('--silent', false, 'dont print anything to stdout')
-opt = cmd:parse(arg or {})
-
-if not opt.silent then
-   table.print(opt)
+if not opt then
+   cmd = torch.CmdLine()
+   cmd:option('-batchSize', 128, 'batchSize')
+   cmd:option('-momentum', 0.5, 'momentum')
+   opt = cmd:parse(arg or {})
+   print('processing options ==>',opt)
 end
---
+
+train_file = 'train_32x32.t7'
+test_file = 'test_32x32.t7'
+trainSize = 10000
+testSize = 2000
+channels = {'y','u','v'}
+
+loadSVHNData = function ()
+    -- We load the dataset from disk, and re-arrange it to be compatible
+    -- with Torch's representation. Matlab uses a column-major representation,
+    -- Torch is row-major, so we just have to transpose the data.
+    -- Note: the data, in X, is 4-d: the 1st dim indexes the samples, the 2nd
+    -- dim indexes the color channels (RGB), and the last two dims index the
+    -- height and width of the samples.
+    print '==> downloading dataset'
+    local www = 'http://torch7.s3-website-us-east-1.amazonaws.com/data/housenumbers/'
+    if not paths.filep(train_file) then
+       os.execute('wget ' .. www .. train_file)
+    end
+    if not paths.filep(test_file) then
+       os.execute('wget ' .. www .. test_file)
+    end
+    --training data --NCWH ==> NCHW transpose 3rd and 4th
+    local loaded = torch.load(train_file,'ascii')
+    trainData = {
+       data = loaded.X:transpose(3,4),
+       labels = loaded.y[1],
+       size = function() return trainSize end
+    }
+    --test data --NCWH ==> NCHW transpose 3rd and 4th
+    loaded = torch.load(test_file,'ascii')
+    testData = {
+       data = loaded.X:transpose(3,4),
+       labels = loaded.y[1],
+       size = function() return testSize end
+    }
+end
+
+preprocessData = function ()
+    trainData.data = trainData.data:float()
+    testData.data = testData.data:float()
+    -- For natural images, we use several intuitive tricks:
+    --   + images are mapped into YUV space, to separate luminance information
+    --     from color information
+    --   + color channels are normalized globally, across the entire dataset;
+    --     as a result, each color component has 0-mean and 1-norm across the dataset.  
+    --   + the luminance channel (Y) is locally normalized, using a contrastive
+    --     normalization operator: for each neighborhood, defined by a Gaussian
+    --     kernel, the mean is suppressed, and the standard deviation is normalized
+    --     to one.
+    -- Convert all images to YUV
+    print '==> preprocessing data: colorspace RGB -> YUV'
+    for i = 1,trainData:size() do
+       trainData.data[i] = image.rgb2yuv(trainData.data[i])
+    end
+    for i = 1,testData:size() do
+       testData.data[i] = image.rgb2yuv(testData.data[i])
+    end  
+    -- GLOBAL NORMALIZATION ==>
+    -- Normalize each channel, and store mean/std
+    -- per channel. These values are important, as they are part of
+    -- the trainable parameters. At test time, test data will be normalized
+    -- using these values.
+    print '==> preprocessing data: normalize each feature (channel) globally'
+    mean = {}
+    std = {}
+    for i,channel in ipairs(channels) do
+       -- normalize each channel globally across samples:
+       mean[i] = trainData.data[{ {},i,{},{} }]:mean()
+       std[i] = trainData.data[{ {},i,{},{} }]:std()
+       trainData.data[{ {},i,{},{} }]:add(-mean[i])
+       trainData.data[{ {},i,{},{} }]:div(std[i])
+    end
+    -- Normalize test data, using the training means/stds
+    for i,channel in ipairs(channels) do
+       -- normalize each channel globally across samples:
+       testData.data[{ {},i,{},{} }]:add(-mean[i])
+       testData.data[{ {},i,{},{} }]:div(std[i])
+    end
+    -- Local normalization ==>
+    print '==> preprocessing data: normalize all three channels locally'
+    -- Define the normalization neighborhood:
+    neighborhood = image.gaussian1D(13)
+    -- Define our local normalization operator (It is an actual nn module, 
+    -- which could be inserted into a trainable model):
+    -- SpatialContrastiveNormalization(nInputPlane, kernel, threshold, thresval)
+    normalization = nn.SpatialContrastiveNormalization(1, neighborhood, 1):float()
+    -- Normalize all channels locally per sample:
+    for c in ipairs(channels) do
+       for i = 1,trainData:size() do
+          trainData.data[{ i,{c},{},{} }] = normalization:forward(trainData.data[{ i,{c},{},{} }])
+       end
+       for i = 1,testData:size() do
+          testData.data[{ i,{c},{},{} }] = normalization:forward(testData.data[{ i,{c},{},{} }])
+       end
+    end
+end
 
 BuildLeNet = function (inputChannels,inputSize)
     local newSize = inputSize
@@ -51,17 +128,5 @@ end
 
 testnet = BuildLeNet(1,32)
 criterion = nn.CrossEntropyCriterion()
-
-input_ = torch.rand(1,32,32) --an image of the digit 3
-target = 3 --class for the digit 3
-zOutput_ = testnet:forward(input_) --net prediction for image of digit 3, after softmax activation
-
-Err = criterion:forward(zOutput_,target) --total network scalar error at the output => E = -sum[ d~j * log(y~j) ] or -torch.log(torch.exp(zOutput_[target])/torch.sum(torch.exp(zOutput_)))
-dErr_dz_ = criterion:backward(zOutput_,target) --network error grad vector at the output wrt softmax activation input => dE/dz = -(d-y) or -d + torch.exp(zOutput_)/torch.sum(torch.exp(zOutput_))
-
-testnet:zeroGradParameters()
-gradInput_ = testnet:backward(input_,dErr_dz_) --backprop using chain rule
-testnet:updateParameters(learningRate)
-
 
 
