@@ -1,6 +1,9 @@
 require 'torch'
 require 'nn'
 require 'image'
+require 'gfx.js'
+
+gfx.startserver()
 
 --[[command line arguments, example '$> th nntest.lua --batchSize 128 --momentum 0.5' ]]--
 if not opt then
@@ -63,10 +66,10 @@ preprocessData = function ()
     -- Convert all images to YUV
     print '==> preprocessing data: colorspace RGB -> YUV'
     for i = 1,trainData:size() do
-       trainData.data[i] = image.rgb2yuv(trainData.data[i])
+        trainData.data[i] = image.rgb2yuv(trainData.data[i])
     end
     for i = 1,testData:size() do
-       testData.data[i] = image.rgb2yuv(testData.data[i])
+        testData.data[i] = image.rgb2yuv(testData.data[i])
     end  
     -- GLOBAL NORMALIZATION ==>
     -- Normalize each channel, and store mean/std
@@ -77,17 +80,19 @@ preprocessData = function ()
     mean = {}
     std = {}
     for i,channel in ipairs(channels) do
-       -- normalize each channel globally across samples:
-       mean[i] = trainData.data[{ {},i,{},{} }]:mean()
-       std[i] = trainData.data[{ {},i,{},{} }]:std()
-       trainData.data[{ {},i,{},{} }]:add(-mean[i])
-       trainData.data[{ {},i,{},{} }]:div(std[i])
+        -- normalize each channel globally across samples:
+        mean[i] = trainData.data[{ {},i,{},{} }]:mean()
+        std[i] = trainData.data[{ {},i,{},{} }]:std()
+        print (channel..'mean='..mean[i])
+        print (channel..'std='..std[i])
+        trainData.data[{ {},i,{},{} }]:add(-mean[i])
+        trainData.data[{ {},i,{},{} }]:div(std[i])
     end
     -- Normalize test data, using the training means/stds
     for i,channel in ipairs(channels) do
-       -- normalize each channel globally across samples:
-       testData.data[{ {},i,{},{} }]:add(-mean[i])
-       testData.data[{ {},i,{},{} }]:div(std[i])
+        -- normalize each channel globally across samples:
+        testData.data[{ {},i,{},{} }]:add(-mean[i])
+        testData.data[{ {},i,{},{} }]:div(std[i])
     end
     -- Local normalization ==>
     print '==> preprocessing data: normalize all three channels locally'
@@ -100,15 +105,37 @@ preprocessData = function ()
     -- Normalize all channels locally per sample:
     for c in ipairs(channels) do
        for i = 1,trainData:size() do
-          trainData.data[{ i,{c},{},{} }] = normalization:forward(trainData.data[{ i,{c},{},{} }])
+            trainData.data[{ i,{c},{},{} }] = normalization:forward(trainData.data[{ i,{c},{},{} }])
        end
        for i = 1,testData:size() do
-          testData.data[{ i,{c},{},{} }] = normalization:forward(testData.data[{ i,{c},{},{} }])
+            testData.data[{ i,{c},{},{} }] = normalization:forward(testData.data[{ i,{c},{},{} }])
        end
     end
 end
 
-BuildLeNet = function (inputChannels,inputSize)
+verifyStats = function ()
+    for i,channel in ipairs(channels) do
+        trainMean = trainData.data[{ {},i }]:mean()
+        trainStd = trainData.data[{ {},i }]:std()
+        testMean = testData.data[{ {},i }]:mean()
+        testStd = testData.data[{ {},i }]:std()
+        print('training data, '..channel..'-channel, mean: ' .. trainMean)
+        print('training data, '..channel..'-channel, standard deviation: ' .. trainStd)
+        print('test data, '..channel..'-channel, mean: ' .. testMean)
+        print('test data, '..channel..'-channel, standard deviation: ' .. testStd)
+    end
+end
+
+visualizeSamples = function (numSamples)
+    samples_y = trainData.data[{ {1,numSamples},1 }]
+    samples_u = trainData.data[{ {1,numSamples},2 }]
+    samples_v = trainData.data[{ {1,numSamples},3 }]
+    gfx.image(samples_y)
+    gfx.image(samples_u)
+    gfx.image(samples_v)
+end
+
+buildLeNet = function (inputChannels,inputSize)
     local newSize = inputSize
     local net = nn.Sequential()
     net:add(nn.SpatialConvolution(inputChannels,6,5,5))  --32x32 => 28x28; 32-(5-1) x 32-(5-1)
@@ -126,7 +153,7 @@ BuildLeNet = function (inputChannels,inputSize)
     return net
 end
 
-testnet = BuildLeNet(1,32)
+testnet = buildLeNet(1,32)
 criterion = nn.CrossEntropyCriterion()
 
 
