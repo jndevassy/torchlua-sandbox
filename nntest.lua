@@ -1,24 +1,60 @@
 require 'torch'
 require 'nn'
+require 'cunn'
+require 'cudnn'
+require 'optim'
+require 'xlua'
 require 'image'
 require 'gfx.js'
 
+--[[command line arguments, example '$> th nntest.lua --batchSize 128 --momentum 0.5' ]]--
+cmd = torch.CmdLine()
+cmd:option('-save', '/home/mit/projects/thtests/results', 'subdirectory to save/log experiments in')
+cmd:option('-learningRate', 1e-3, 'learning rate at t=0')
+cmd:option('-batchSize', 1, 'mini-batch size (1 = pure stochastic)')
+cmd:option('-weightDecay', 0, 'weight decay (SGD only)')
+cmd:option('-momentum', 0, 'momentum (SGD only)')
+opt = cmd:parse(arg or {})
+print('processing options ==>',opt)
 gfx.startserver()
 
---[[command line arguments, example '$> th nntest.lua --batchSize 128 --momentum 0.5' ]]--
-if not opt then
-   cmd = torch.CmdLine()
-   cmd:option('-batchSize', 128, 'batchSize')
-   cmd:option('-momentum', 0.5, 'momentum')
-   opt = cmd:parse(arg or {})
-   print('processing options ==>',opt)
-end
-
+--GLOBALS
 train_file = 'train_32x32.t7'
 test_file = 'test_32x32.t7'
 trainSize = 10000
 testSize = 2000
 channels = {'y','u','v'}
+-- input channels or feature maps
+nfeaturemaps = 3
+nRowsOrCols = 32 --image is 32 x 32
+-- filter sizes
+nfilterKernelsByLayer = {64,64}
+nfiltsize = 5
+npoolsize = 2
+--mlp hidden units
+nMLPHiddenUnits = 128
+-- 10-class problem
+noutputs = 10
+-- classes
+classes = {'1','2','3','4','5','6','7','8','9','0'}
+-- This matrix records the current confusion across classes
+confusion = optim.ConfusionMatrix(classes)
+-- optimizer settings ==>
+optimState = {
+  learningRate = opt.learningRate,
+  weightDecay = opt.weightDecay,
+  momentum = opt.momentum,
+  learningRateDecay = 1e-7
+}
+optimMethod = optim.sgd
+epoch,shuffle = nil,nil
+theModel,parameters,gradParameters,crit = nil,nil,nil,nil
+-- Log results to files
+trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
+testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
+--data
+trainData = trainData or {}
+testData = testData or {}
 
 loadSVHNData = function ()
     -- We load the dataset from disk, and re-arrange it to be compatible
@@ -77,8 +113,8 @@ preprocessData = function ()
     -- the trainable parameters. At test time, test data will be normalized
     -- using these values.
     print '==> preprocessing data: normalize each feature (channel) globally'
-    mean = {}
-    std = {}
+    local mean = {}
+    local std = {}
     for i,channel in ipairs(channels) do
         -- normalize each channel globally across samples:
         mean[i] = trainData.data[{ {},i,{},{} }]:mean()
@@ -97,11 +133,11 @@ preprocessData = function ()
     -- Local normalization ==>
     print '==> preprocessing data: normalize all three channels locally'
     -- Define the normalization neighborhood:
-    neighborhood = image.gaussian1D(13)
+    local neighborhood = image.gaussian1D(13)
     -- Define our local normalization operator (It is an actual nn module, 
     -- which could be inserted into a trainable model):
     -- SpatialContrastiveNormalization(nInputPlane, kernel, threshold, thresval)
-    normalization = nn.SpatialContrastiveNormalization(1, neighborhood, 1):float()
+    local normalization = nn.SpatialContrastiveNormalization(1, neighborhood, 1):float()
     -- Normalize all channels locally per sample:
     for c in ipairs(channels) do
        for i = 1,trainData:size() do
@@ -115,10 +151,10 @@ end
 
 verifyStats = function ()
     for i,channel in ipairs(channels) do
-        trainMean = trainData.data[{ {},i }]:mean()
-        trainStd = trainData.data[{ {},i }]:std()
-        testMean = testData.data[{ {},i }]:mean()
-        testStd = testData.data[{ {},i }]:std()
+        local trainMean = trainData.data[{ {},i }]:mean()
+        local trainStd = trainData.data[{ {},i }]:std()
+        local testMean = testData.data[{ {},i }]:mean()
+        local testStd = testData.data[{ {},i }]:std()
         print('training data, '..channel..'-channel, mean: ' .. trainMean)
         print('training data, '..channel..'-channel, standard deviation: ' .. trainStd)
         print('test data, '..channel..'-channel, mean: ' .. testMean)
@@ -127,12 +163,44 @@ verifyStats = function ()
 end
 
 visualizeSamples = function (numSamples)
-    samples_y = trainData.data[{ {1,numSamples},1 }]
-    samples_u = trainData.data[{ {1,numSamples},2 }]
-    samples_v = trainData.data[{ {1,numSamples},3 }]
+    local samples_y = trainData.data[{ {1,numSamples},1 }]
+    local samples_u = trainData.data[{ {1,numSamples},2 }]
+    local samples_v = trainData.data[{ {1,numSamples},3 }]
     gfx.image(samples_y)
     gfx.image(samples_u)
     gfx.image(samples_v)
+end
+
+buildConvNet = function (inputFeatureMaps,nRowsOrCols,filterKernels,filterSize,poolSize,hiddenUnits,outputUnits)
+    local newSize = nRowsOrCols
+    local model = nn.Sequential()
+    -- stage 1 : filter bank -> squashing -> L2 pooling -> normalization
+    model:add(nn.SpatialConvolutionMM(inputFeatureMaps, filterKernels[1], filterSize, filterSize))
+    newSize = newSize-(filterSize-1) --reduced size of new feature maps; count = filterKernels[1]
+    model:add(nn.ReLU())
+    model:add(nn.SpatialMaxPooling(poolSize,poolSize,poolSize,poolSize))
+    newSize = newSize/2 --reduced size of new feature maps
+    -- stage 2 : filter bank -> squashing -> L2 pooling -> normalization
+    model:add(nn.SpatialConvolutionMM(filterKernels[1], filterKernels[2], filterSize, filterSize))
+    newSize = newSize-(filterSize-1) --reduced size of new feature maps; count = filterKernels[2]
+    model:add(nn.ReLU())
+    model:add(nn.SpatialMaxPooling(poolSize,poolSize,poolSize,poolSize))
+    newSize = newSize/2 --reduced size of new feature maps
+    -- stage 3 : standard 2-layer neural network
+    --new feature maps are of size newSize x newSize and there are filterKernels[2] of these; flatten them out
+    --this is the input layer for the fully connected mlp
+    model:add(nn.Reshape(filterKernels[2]*newSize*newSize))
+    model:add(nn.Dropout(0.5))
+    --middle layer to have hiddenUnits number of units
+    model:add(nn.Linear(filterKernels[2]*newSize*newSize, hiddenUnits))
+    model:add(nn.ReLU())
+    --output layer to have outputUnits units
+    model:add(nn.Linear(hiddenUnits, outputUnits))
+    model:cuda()
+    local params,gradParams = model:getParameters()
+    local criterion = nn.CrossEntropyCriterion()
+    criterion:cuda()
+    return model,params,gradParams,criterion
 end
 
 buildLeNet = function (inputChannels,inputSize)
@@ -150,10 +218,143 @@ buildLeNet = function (inputChannels,inputSize)
     net:add(nn.Linear(16*newSize*newSize,128))  --add hidden layer with 128 neurons
     net:add(nn.Linear(128,64))               --add another hidden layer
     net:add(nn.Linear(64,10))                --add output layer 10 digits to classify
-    return net
+    net:cuda()
+    local params,gradParams = net:getParameters()
+    local criterion = nn.CrossEntropyCriterion()
+    criterion:cuda()
+    return net,params,gradParams,criterion
 end
 
-testnet = buildLeNet(1,32)
-criterion = nn.CrossEntropyCriterion()
+trainModel = function ()
+    --   + construct mini-batches on the fly
+    --   + define a closure to estimate (a noisy) loss
+    --     function, as well as its derivatives wrt the parameters of the
+    --     model to be trained
+    --   + optimize the function, according to several optmization
+    --     methods: SGD, L-BFGS.
+    -- epoch tracker
+    epoch = epoch or 1
+    -- local vars
+    local time = sys.clock()
+    -- set model to training mode (for modules that differ in training and testing, like Dropout)
+    theModel:training()
+    -- shuffle at each epoch
+    shuffle = torch.randperm(trainData:size())
+    -- do one epoch
+    print('==> doing epoch on training data:')
+    print("==> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
+    for t = 1,trainData:size(),opt.batchSize do
+        -- disp progress
+        xlua.progress(t, trainData:size())
+        -- create mini batch
+        local inputs = {}
+        local targets = {}
+        for i = t,math.min(t+opt.batchSize-1,trainData:size()) do
+            -- load new sample
+            local input = trainData.data[shuffle[i]]
+            local target = trainData.labels[shuffle[i]]
+            input = input:cuda()
+            table.insert(inputs, input)
+            table.insert(targets, target)
+        end
+        -- create closure to evaluate f and df/dW
+        local feval = 
+            function(x)
+                -- get new parameters
+                if x ~= parameters then
+                    parameters:copy(x)
+                end
+                -- reset gradients
+                gradParameters:zero()
+                -- f is the average of all criterions
+                local f = 0
+                -- evaluate function for complete mini batch
+                for i = 1,#inputs do
+                    -- estimate f
+                    local output = theModel:forward(inputs[i])
+                    local err = crit:forward(output, targets[i])
+                    f = f + err
+                    -- estimate df/dW
+                    local df_do = crit:backward(output, targets[i])
+                    theModel:backward(inputs[i], df_do)
+                    --[[--weighted delta from next layer brought back times gradient of previous layer activation:
+                    local GradWrtInput = theModel:updateGradInput(inputs[i],df_do)
+                    --GradWrtInput at next layer times the previous layer activation:
+                    theModel:accGradParameters(inputs[i],df_do)]]--
+                    -- update confusion
+                    confusion:add(output, targets[i])
+                end
+                -- normalize gradients and f
+                gradParameters:div(#inputs)
+                f = f/#inputs
+                -- return f and df/dW
+                return f,gradParameters
+            end
+        -- optimize on current mini-batch; update parameters as per gradParameters as per
+        -- parameters = parameters - learningRate * gradParameters
+        optimMethod(feval, parameters, optimState)
+    end
+    -- time taken
+    time = sys.clock() - time
+    time = time / trainData:size()
+    print("\n==> time to learn 1 sample = " .. (time*1000) .. 'ms')
+    -- print confusion matrix
+    print(confusion)
+    -- update logger/plot
+    trainLogger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
+    trainLogger:style{['% mean class accuracy (train set)'] = '-'}
+    trainLogger:plot()
+    -- save/log current net
+    local filename = paths.concat(opt.save, 'model.net')
+    os.execute('mkdir -p ' .. sys.dirname(filename))
+    print('==> saving model to '..filename)
+    torch.save(filename, model)
+    -- next epoch
+    confusion:zero()
+    epoch = epoch + 1
+end
 
+-- test function
+testModel = function ()
+    -- local vars
+    local time = sys.clock()
+    -- set model to evaluate mode (for modules that differ in training and testing, like Dropout)
+    theModel:evaluate()
+    -- test over test data
+    print('==> testing on test set:')
+    for t = 1,testData:size() do
+        -- disp progress
+        xlua.progress(t, testData:size())
+        -- get new sample
+        local input = testData.data[t]
+        input = input:cuda()
+        local target = testData.labels[t]
+        -- test sample
+        local pred = theModel:forward(input)
+        confusion:add(pred, target)
+    end
+    -- timing
+    time = sys.clock() - time
+    time = time / testData:size()
+    print("\n==> time to test 1 sample = " .. (time*1000) .. 'ms')
+    -- print confusion matrix
+    print(confusion)
+    -- update log/plot
+    testLogger:add{['% mean class accuracy (test set)'] = confusion.totalValid * 100}
+    testLogger:style{['% mean class accuracy (test set)'] = '-'}
+    testLogger:plot()
+    -- next iteration:
+    confusion:zero()
+end
+
+--loadSVHNData()
+--preprocessData()
+verifyStats()
+theModel,parameters,gradParameters,crit = 
+    buildConvNet(nfeaturemaps,nRowsOrCols,nfilterKernelsByLayer,nfiltsize,npoolsize,nMLPHiddenUnits,noutputs)
+print(testnet,crit)
+while true do
+    trainModel()
+    testModel()
+end
 

@@ -1,5 +1,3 @@
-*.t7
-
 *.~sql
 *.~pks
 *.~pkb
@@ -16,6 +14,10 @@
 
 *.jar
 *.pyc
+*.t7
+*.log
+*.net
+*.eps
 
 #Visual Studio files
 *.[Oo]bj
