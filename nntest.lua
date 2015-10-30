@@ -38,6 +38,9 @@ noutputs = 10
 -- classes
 classes = {'1','2','3','4','5','6','7','8','9','0'}
 -- This matrix records the current confusion across classes
+-- confusion[target][prediction] = confusion[target][prediction] + 1
+-- target is on rows, predictions are on columns
+-- ideally only diagonal elements should get updated i.e prediction==target
 confusion = optim.ConfusionMatrix(classes)
 -- optimizer settings ==>
 optimState = {
@@ -225,6 +228,27 @@ buildLeNet = function (inputChannels,inputSize)
     return net,params,gradParams,criterion
 end
 
+simplePlot = function ()
+    if xlua.require('gnuplot') then
+        symbols={}
+        symbols[1]={}
+        for i = 1,100 do
+            table.insert(symbols[1],2*i -10)
+        end
+        symbols[2]={}
+        for i = 1,100 do
+            table.insert(symbols[2],100*math.log10(i))
+        end
+        plots={}
+        for name,list in pairs(symbols) do
+            plotlist = torch.Tensor(#list)
+            for j = 1,#list do plotlist[j] = list[j] end
+            table.insert(plots,{tostring(name),plotlist,'-'})
+        end
+        gnuplot.plot(plots)
+    end
+end
+
 trainModel = function ()
     --   + construct mini-batches on the fly
     --   + define a closure to estimate (a noisy) loss
@@ -301,6 +325,8 @@ trainModel = function ()
     -- print confusion matrix
     print(confusion)
     -- update logger/plot
+    --totalValid is the sum of the diagonal of the confusion matrix divided by the sum of the matrix. 
+    --averageValid is the average of all diagonals divided by their respective rows.
     trainLogger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
     trainLogger:style{['% mean class accuracy (train set)'] = '-'}
     trainLogger:plot()
