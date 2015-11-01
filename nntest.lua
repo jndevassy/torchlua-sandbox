@@ -23,6 +23,9 @@ train_file = 'train_32x32.t7'
 test_file = 'test_32x32.t7'
 trainSize = 10000
 testSize = 2000
+--data
+trainData = trainData or {}
+testData = testData or {}
 channels = {'y','u','v'}
 -- input channels or feature maps
 nfeaturemaps = 3
@@ -37,11 +40,6 @@ nMLPHiddenUnits = 128
 noutputs = 10
 -- classes
 classes = {'1','2','3','4','5','6','7','8','9','0'}
--- This matrix records the current confusion across classes
--- confusion[target][prediction] = confusion[target][prediction] + 1
--- target is on rows, predictions are on columns
--- ideally only diagonal elements should get updated i.e prediction==target
-confusion = optim.ConfusionMatrix(classes)
 -- optimizer settings ==>
 optimState = {
   learningRate = opt.learningRate,
@@ -50,14 +48,17 @@ optimState = {
   learningRateDecay = 1e-7
 }
 optimMethod = optim.sgd
-epoch,shuffle = nil,nil
-theModel,parameters,gradParameters,crit = nil,nil,nil,nil
+-- This matrix records the current confusion across classes
+-- confusion[target][prediction] = confusion[target][prediction] + 1
+-- target is on rows, predictions are on columns
+-- ideally only diagonal elements should get updated i.e prediction==target
+confusion = optim.ConfusionMatrix(classes)
 -- Log results to files
 trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
 testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
---data
-trainData = trainData or {}
-testData = testData or {}
+-- net and training vars
+epoch,shuffle = nil,nil
+nnet,criterion = nil,nil
 
 loadSVHNData = function ()
     -- We load the dataset from disk, and re-arrange it to be compatible
@@ -200,10 +201,9 @@ buildConvNet = function (inputFeatureMaps,nRowsOrCols,filterKernels,filterSize,p
     --output layer to have outputUnits units
     model:add(nn.Linear(hiddenUnits, outputUnits))
     model:cuda()
-    local params,gradParams = model:getParameters()
-    local criterion = nn.CrossEntropyCriterion()
-    criterion:cuda()
-    return model,params,gradParams,criterion
+    local crit = nn.CrossEntropyCriterion()
+    crit:cuda()
+    return model,crit
 end
 
 buildLeNet = function (inputChannels,inputSize)
@@ -222,10 +222,9 @@ buildLeNet = function (inputChannels,inputSize)
     net:add(nn.Linear(128,64))               --add another hidden layer
     net:add(nn.Linear(64,10))                --add output layer 10 digits to classify
     net:cuda()
-    local params,gradParams = net:getParameters()
-    local criterion = nn.CrossEntropyCriterion()
-    criterion:cuda()
-    return net,params,gradParams,criterion
+    local crit = nn.CrossEntropyCriterion()
+    crit:cuda()
+    return net,crit
 end
 
 simplePlot = function ()
@@ -249,7 +248,7 @@ simplePlot = function ()
     end
 end
 
-trainModel = function ()
+trainModel = function (theModel,crit)
     --   + construct mini-batches on the fly
     --   + define a closure to estimate (a noisy) loss
     --     function, as well as its derivatives wrt the parameters of the
@@ -259,6 +258,7 @@ trainModel = function ()
     -- epoch tracker
     epoch = epoch or 1
     -- local vars
+    local parameters,gradParameters = theModel:getParameters()
     local time = sys.clock()
     -- set model to training mode (for modules that differ in training and testing, like Dropout)
     theModel:training()
@@ -300,11 +300,11 @@ trainModel = function ()
                     f = f + err
                     -- estimate df/dW
                     local df_do = crit:backward(output, targets[i])
-                    theModel:backward(inputs[i], df_do)
-                    --[[--weighted delta from next layer brought back times gradient of previous layer activation:
+                    --theModel:backward(inputs[i], df_do)
+                    --weighted delta from next layer brought back times gradient of previous layer activation:
                     local GradWrtInput = theModel:updateGradInput(inputs[i],df_do)
                     --GradWrtInput at next layer times the previous layer activation:
-                    theModel:accGradParameters(inputs[i],df_do)]]--
+                    theModel:accGradParameters(inputs[i],df_do)
                     -- update confusion
                     confusion:add(output, targets[i])
                 end
@@ -340,8 +340,86 @@ trainModel = function ()
     epoch = epoch + 1
 end
 
+manualTrainModel = function (theModel,crit)
+    epoch = epoch or 1
+    -- local vars
+    local parameters,gradParameters = theModel:getParameters()
+    local time = sys.clock()
+    -- set model to training mode (for modules that differ in training and testing, like Dropout)
+    theModel:training()
+    -- shuffle at each epoch
+    shuffle = torch.randperm(trainData:size())
+    -- do one epoch
+    print('==> doing epoch on training data:')
+    print("==> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
+    for t = 1,trainData:size(),opt.batchSize do
+        -- disp progress
+        xlua.progress(t, trainData:size())
+        -- create mini batch
+        local inputs = {}
+        local targets = {}
+        for i = t,math.min(t+opt.batchSize-1,trainData:size()) do
+            -- load new sample
+            local input = trainData.data[shuffle[i]]
+            local target = trainData.labels[shuffle[i]]
+            input = input:cuda()
+            table.insert(inputs, input)
+            table.insert(targets, target)
+        end
+        -- create closure to evaluate f and df/dW
+        local feval = 
+            function()
+                -- reset gradients
+                gradParameters:zero()
+                -- f is the average of all criterions
+                local f = 0
+                -- evaluate function for complete mini batch
+                for i = 1,#inputs do
+                    -- estimate f
+                    local output = theModel:forward(inputs[i])
+                    local err = crit:forward(output, targets[i])
+                    f = f + err
+                    -- estimate df/dW
+                    local df_do = crit:backward(output, targets[i])
+                    --weighted delta from next layer brought back times gradient of previous layer activation:
+                    local GradWrtInput = theModel:updateGradInput(inputs[i],df_do)
+                    --GradWrtInput at next layer times the previous layer activation:
+                    theModel:accGradParameters(inputs[i],df_do)
+                    -- update confusion
+                    confusion:add(output, targets[i])
+                end
+                -- normalize gradients and f
+                gradParameters:div(#inputs)
+            end
+        -- update parameters as per gradParameters as per
+        -- parameters = parameters - learningRate * gradParameters
+        feval()
+        theModel:updateParameters(opt.learningRate)
+    end
+    -- time taken
+    time = sys.clock() - time
+    time = time / trainData:size()
+    print("\n==> time to learn 1 sample = " .. (time*1000) .. 'ms')
+    -- print confusion matrix
+    print(confusion)
+    -- update logger/plot
+    --totalValid is the sum of the diagonal of the confusion matrix divided by the sum of the matrix. 
+    --averageValid is the average of all diagonals divided by their respective rows.
+    trainLogger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
+    trainLogger:style{['% mean class accuracy (train set)'] = '-'}
+    trainLogger:plot()
+    -- save/log current net
+    local filename = paths.concat(opt.save, 'model.net')
+    os.execute('mkdir -p ' .. sys.dirname(filename))
+    print('==> saving model to '..filename)
+    torch.save(filename, model)
+    -- next epoch
+    confusion:zero()
+    epoch = epoch + 1
+end
+
 -- test function
-testModel = function ()
+testModel = function (theModel)
     -- local vars
     local time = sys.clock()
     -- set model to evaluate mode (for modules that differ in training and testing, like Dropout)
@@ -373,14 +451,55 @@ testModel = function ()
     confusion:zero()
 end
 
---loadSVHNData()
---preprocessData()
+checkNumericalGrad = function(theModel,crit)
+    -- local vars
+    local computeCost = function(formodel,forcrit)
+        local cost = 0
+        for i = 1,trainData:size() do          
+            local input = trainData.data[i]
+            local target = trainData.labels[i]
+            input = input:cuda()
+            local output = formodel:forward(input)
+            local err = forcrit:forward(output,target)
+            cost = cost + err
+        end
+        return cost/trainData:size()
+    end
+    local parameters,gradParameters = theModel:getParameters()
+    -- make a copy before modifying
+    local copy_params = torch.zeros(parameters:size())
+    copy_params:copy(parameters)
+    local numgrad = torch.zeros(parameters:size());
+    local perturb = torch.zeros(parameters:size());
+    local e = 1e-4;
+    for p = 1,parameters:numel() do
+        xlua.progress(p, parameters:numel())
+        -- Set perturbation vector
+        perturb[p] = e;
+        parameters = copy_params - perturb;
+        local partialloss1_forp = computeCost(theModel,crit);
+        parameters = copy_params + perturb;
+        local partialloss2_forp = computeCost(theModel,crit);
+        -- Compute Numerical Gradient
+        numgrad[p] = (partialloss2_forp - partialloss1_forp) / (2*e);
+        perturb[p] = 0;
+    end
+    -- copy back
+    parameters:copy(copy_params)
+    --
+    local diff = gradParameters - numgrad
+    print (diff:max(),diff:sum(),diff:mean())
+end
+
+loadSVHNData()
+preprocessData()
 verifyStats()
-theModel,parameters,gradParameters,crit = 
+nnet,criterion = 
     buildConvNet(nfeaturemaps,nRowsOrCols,nfilterKernelsByLayer,nfiltsize,npoolsize,nMLPHiddenUnits,noutputs)
-print(testnet,crit)
+print(nnet,criterion)
 while true do
-    trainModel()
-    testModel()
+    --trainModel(nnet,criterion)
+    manualTrainModel(nnet,criterion)
+    testModel(nnet)
 end
 
