@@ -12,6 +12,10 @@
 /checkouts
 /.lein-deps-sum
 
+*.zip
+*.tar
+*.gz
+*.tgz
 *.jar
 *.pyc
 *.t7
