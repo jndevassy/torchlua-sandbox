@@ -390,8 +390,9 @@ manualTrainModel = function (theModel,crit)
                 end
                 -- normalize gradients and f
                 gradParameters:div(#inputs)
+                f = f/#inputs
             end
-        -- update parameters as per gradParameters as per
+        -- update parameters using gradParameters as per
         -- parameters = parameters - learningRate * gradParameters
         feval()
         theModel:updateParameters(opt.learningRate)

@@ -1,24 +1,21 @@
-
 --loadcifar10 package:
 loadcifar10 = {}
 
-local loadData = function ()
-    local trainFile = 'cifar10-train.t7'
-    local testFile = 'cifar10-test.t7'
+loadcifar10.loadData = function (trainFile,testFile,downloadCmd,unzipCmd)
     if not paths.filep(trainFile) or not paths.filep(testFile) then
-        os.execute('wget -c https://s3.amazonaws.com/torch7/data/cifar10torchsmall.zip')
-        os.execute('unzip cifar10torchsmall.zip')
+        if downloadCmd then os.execute(downloadCmd) end
+        if unzipCmd then os.execute(unzipCmd) end
     end
     local trainData = torch.load(trainFile)
-    trainData.data = trainData.data:float()
+    trainData.data = trainData.data:cuda()
     trainData["size"] = function(self) return self.data:size(1) end
     local testData = torch.load(testFile)
-    testData.data = testData.data:float()
+    testData.data = testData.data:cuda()
     testData["size"] = function(self) return self.data:size(1) end
     return trainData,testData
 end
 
-local normalizeData = function (dataSet)
+loadcifar10.normalizeData = function (dataSet)
     --dataSet ==> Samples x Channels x Height(rows) x Width(cols)
     local mean = {}
     local std = {}
@@ -32,8 +29,9 @@ local normalizeData = function (dataSet)
     end
 end
 
-loadcifar10["loadData"] = loadData
-loadcifar10["normalizeData"] = normalizeData
+loadcifar10.visualizeImage = function (dataSet,sampleNum)
+    gfx.image(dataSet.data[sampleNum])
+end
 
 return loadcifar10
 
