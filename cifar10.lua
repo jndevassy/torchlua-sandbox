@@ -101,8 +101,10 @@ cifar10.main = function ()
     cifar10.loop()
 end
 
-cifar10.testSingle = function (sampleNum)
-    modelcifar10.testSingleImage(cifar10.testSet,cifar10.model,cifar10.classes,sampleNum)
+cifar10.visualizeImage = loadcifar10.visualizeImage
+
+cifar10.trySingle = function (dataSet,sampleNum)
+    modelcifar10.testSingleImage(dataSet,cifar10.model,cifar10.classes,sampleNum)
 end
 
 return cifar10
