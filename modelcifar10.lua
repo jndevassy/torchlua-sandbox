@@ -20,13 +20,18 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     --this is the input layer for the fully connected mlp
     model:add(nn.Reshape(filterKernels[2]*newSize*newSize))
     model:add(nn.Dropout(0.5))
-    --middle layer to have mlpHiddenUnits number of units
-    model:add(nn.Linear(filterKernels[2]*newSize*newSize, mlpHiddenUnits))
+    --1st mlp hidden layer to have mlpHiddenUnits[1] number of units
+    model:add(nn.Linear(filterKernels[2]*newSize*newSize, mlpHiddenUnits[1]))
+    model:add(nn.ReLU())
+    --2nd mlp hidden layer to have mlpHiddenUnits[2] number of units
+    model:add(nn.Linear(mlpHiddenUnits[1], mlpHiddenUnits[2]))
     model:add(nn.ReLU())
     --output layer to have outputUnits units
-    model:add(nn.Linear(mlpHiddenUnits, outputUnits))
+    model:add(nn.Linear(mlpHiddenUnits[2], outputUnits))
+    --convert output to log-probabilities
+    model:add(nn.LogSoftMax())
     model:cuda()
-    local crit = nn.CrossEntropyCriterion()
+    local crit = nn.ClassNLLCriterion()
     crit:cuda()
     return model,crit
 end
@@ -79,6 +84,8 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
                 --gradient wrt parameters/weights: gradient wrt input at next layer times the previous layer activation
                 model:accGradParameters(inputs[i],dE_do)
                 -- update confusion
+                -- the output of the network is log-probabilities. take e^x to get actual probability values
+                output:exp()
                 confusionMatrix:add(output, targets[i])
             end
             -- normalize gradients and cost E
@@ -136,8 +143,10 @@ modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
         local input = dataSet.data[t]
         local target = dataSet.label[t]
         -- test sample
-        local pred = model:forward(input)
-        confusionMatrix:add(pred, target)
+        local predicted = model:forward(input)
+        -- the output of the network is log-probabilities. take e^x to get actual probability values
+        predicted:exp()
+        confusionMatrix:add(predicted, target)
     end
     -- timing
     time = sys.clock() - time
@@ -154,12 +163,16 @@ end
 modelcifar10.testSingleImage = function (dataSet,model,classes,sampleNum)
     -- get sample
     local input = dataSet.data[sampleNum]
+    gfx.image(input)
     local target = dataSet.label[sampleNum]
     -- test sample
-    local pred = model:forward(input)
-    print('actual: '..target)
-    print('predicted: '..pred)
-    gfx.image(dataSet.data[sampleNum])
+    local predicted = model:forward(input)
+    -- the output of the network is Log-Probabilities. To convert them to probabilities, you have to take e^x 
+    local logp = torch.exp(predicted)
+    print('actual: '..classes[target])
+    for i=1,predicted:size(1) do
+        print(classes[i], predicted[i], logp[i])
+    end
 end
 
 return modelcifar10

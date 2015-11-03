@@ -49,9 +49,9 @@ optimState = {
 }
 optimMethod = optim.sgd
 -- This matrix records the current confusion across classes
--- confusion[target][prediction] = confusion[target][prediction] + 1
--- target is on rows, predictions are on columns
--- ideally only diagonal elements should get updated i.e prediction==target
+-- confusion:add(predicted,label) ==> confusion[label][predicted] = confusion[label][predicted] + 1
+-- target label is "printed" on rows, predicted counts are shown on columns
+-- ideally only diagonal elements should get updated i.e target label==predicted output
 confusion = optim.ConfusionMatrix(classes)
 -- Log results to files
 trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))

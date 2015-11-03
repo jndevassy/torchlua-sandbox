@@ -20,20 +20,20 @@ cifar10.nfilterKernelsByLayer = {64,64}
 cifar10.nfiltsize = 5
 cifar10.npoolsize = 2
 --mlp hidden units
-cifar10.nMLPHiddenUnits = 128
+cifar10.nMLPHiddenUnits = {128,64}
 -- 10-class problem
 cifar10.noutputs = 10
 -- classes
 cifar10.classes = {'airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck'}
--- confusion matrix: this matrix records the current confusion across classes
--- confusion[target][prediction] = confusion[target][prediction] + 1
--- target is on rows, predictions are on columns
--- ideally only diagonal elements should get updated i.e prediction==target
+-- This matrix records the current confusion across classes
+-- confusion:add(predicted,label) ==> confusion[label][predicted] = confusion[label][predicted] + 1
+-- target label is "printed" on rows, predicted counts are shown on columns
+-- ideally only diagonal elements should get updated i.e target label==predicted output
 cifar10.confusionMatrix = optim.ConfusionMatrix(cifar10.classes)
 -- log results to files
 cifar10.trainLog = nil
 cifar10.testLog = nil
--- options (savePath,batchSize,learningRate,trainingEpoch,useOptimizer)
+-- options (savePath,batchSize,learningRate,trainingEpoch,maxEpochs,useOptimizer)
 cifar10.options = nil
 -- train and test dataSets
 cifar10.trainSet,cifar10.testSet = nil,nil
@@ -51,6 +51,7 @@ cifar10.setup = function ()
     cmd:option('-batchSize', 1, 'mini-batch size (1 = pure stochastic)')
     cmd:option('-learningRate', 1e-3, 'learning rate at t=0')
     cmd:option('-trainingEpoch', 0, 'training iteration start value')
+    cmd:option('-maxEpochs', 50, 'max training epochs')
     cmd:option('-useOptimizer', true, 'whether to use optimizer(SGD) or to go manual')
     cifar10.options = cmd:parse(arg or {})
     print('processing options ==>',cifar10.options)
@@ -76,7 +77,7 @@ cifar10.setup = function ()
 end
 
 cifar10.loop = function ()
-    while true do
+    for i =1,cifar10.options.maxEpochs do
         --train the model
         modelcifar10.train(
             cifar10.trainSet,
