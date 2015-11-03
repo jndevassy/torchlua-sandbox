@@ -33,7 +33,7 @@ cifar10.confusionMatrix = optim.ConfusionMatrix(cifar10.classes)
 -- log results to files
 cifar10.trainLog = nil
 cifar10.testLog = nil
--- options (savePath,batchSize,learningRate,trainingEpoch)
+-- options (savePath,batchSize,learningRate,trainingEpoch,useOptimizer)
 cifar10.options = nil
 -- train and test dataSets
 cifar10.trainSet,cifar10.testSet = nil,nil
@@ -41,6 +41,8 @@ cifar10.trainFile = 'cifar10-train.t7'
 cifar10.testFile = 'cifar10-test.t7'
 cifar10.downloadCommand = 'wget -c https://s3.amazonaws.com/torch7/data/cifar10torchsmall.zip'
 cifar10.unzipCommand = 'unzip cifar10torchsmall.zip'
+-- optimizer method
+cifar10.SGDOptimize = optim.sgd
 
 cifar10.setup = function ()
     gfx.startserver()
@@ -48,7 +50,8 @@ cifar10.setup = function ()
     cmd:option('-savePath', '/home/mit/projects/thtests/results', 'subdirectory to save/log experiments in')
     cmd:option('-batchSize', 1, 'mini-batch size (1 = pure stochastic)')
     cmd:option('-learningRate', 1e-3, 'learning rate at t=0')
-    cmd:option('-trainingEpoch', 1, 'training iteration start value')
+    cmd:option('-trainingEpoch', 0, 'training iteration start value')
+    cmd:option('-useOptimizer', true, 'whether to use optimizer(SGD) or to go manual')
     cifar10.options = cmd:parse(arg or {})
     print('processing options ==>',cifar10.options)
     cifar10.trainLog = optim.Logger(paths.concat(cifar10.options.savePath, 'train.log'))
@@ -81,7 +84,8 @@ cifar10.loop = function ()
             cifar10.criterion,
             cifar10.options,
             cifar10.confusionMatrix,
-            cifar10.trainLog)
+            cifar10.trainLog,
+            cifar10.SGDOptimize)
         --test the model
         modelcifar10.test(
             cifar10.testSet,
@@ -94,6 +98,10 @@ end
 cifar10.main = function ()
     cifar10.setup()
     cifar10.loop()
+end
+
+cifar10.testSingle = function (sampleNum)
+    modelcifar10.testSingleImage(cifar10.testSet,cifar10.model,cifar10.classes,sampleNum)
 end
 
 return cifar10

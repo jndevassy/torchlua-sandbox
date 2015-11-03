@@ -31,11 +31,13 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     return model,crit
 end
 
-modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger)
+modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger,sgdOptimizeCall)
     local w,dE_dw = model:getParameters()
     local time = sys.clock()
     -- set model to training mode (for modules that differ in training and testing, like Dropout)
     model:training()
+    confusionMatrix:zero()
+    options.trainingEpoch = options.trainingEpoch + 1
     -- shuffle at each epoch
     local shuffle = torch.randperm(dataSet.data:size(1))
     -- do one epoch
@@ -82,12 +84,24 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
             -- normalize gradients and cost E
             dE_dw:div(#inputs)
             E = E/#inputs
+            -- return cost and gradients for mini batch
+            return E,dE_dw
         end
         -- perform gradient descent for mini batch just created
-        gradientDescent(w)
-        -- update parameters/weights using dE_dw as per:
-        -- w = w - learningRate * dE_dw
-        model:updateParameters(options.learningRate)
+        if not options.useOptimizer then
+            gradientDescent(w)
+            -- update parameters/weights using dE_dw as per:
+            -- w = w - learningRate * dE_dw
+            model:updateParameters(options.learningRate)
+        else
+            local optimState = {
+                learningRate = options.learningRate,
+                weightDecay = 0,
+                momentum = 0,
+                learningRateDecay = 1e-7
+            }
+            sgdOptimizeCall(gradientDescent,w,optimState)
+        end
     end
     -- time taken for complete dataSet
     time = sys.clock() - time
@@ -106,15 +120,13 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     os.execute('mkdir -p ' .. sys.dirname(filename))
     print('==> saving model to '..filename)
     torch.save(filename, model)
-    -- prepare for next epoch
-    confusionMatrix:zero()
-    options.trainingEpoch = options.trainingEpoch + 1
 end
 
 modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
     local time = sys.clock()
     -- set model to evaluate mode (for modules that differ in training and testing, like Dropout)
     model:evaluate()
+    confusionMatrix:zero()
     -- test over test data
     print('==> testing on test set:')
     for t = 1,dataSet.data:size(1) do
@@ -137,8 +149,17 @@ modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
     logger:add{['% mean class accuracy (test set)'] = confusionMatrix.totalValid * 100}
     logger:style{['% mean class accuracy (test set)'] = '-'}
     logger:plot()
-    -- next iteration:
-    confusionMatrix:zero()
+end
+
+modelcifar10.testSingleImage = function (dataSet,model,classes,sampleNum)
+    -- get sample
+    local input = dataSet.data[sampleNum]
+    local target = dataSet.label[sampleNum]
+    -- test sample
+    local pred = model:forward(input)
+    print('actual: '..target)
+    print('predicted: '..pred)
+    gfx.image(dataSet.data[sampleNum])
 end
 
 return modelcifar10
