@@ -51,8 +51,9 @@ cifar10.setup = function ()
     cmd:option('-batchSize', 1, 'mini-batch size (1 = pure stochastic)')
     cmd:option('-learningRate', 1e-3, 'learning rate at t=0')
     cmd:option('-trainingEpoch', 0, 'training iteration start value')
-    cmd:option('-maxEpochs', 50, 'max training epochs')
+    cmd:option('-maxEpochs', 5, 'max training epochs')
     cmd:option('-useOptimizer', true, 'whether to use optimizer(SGD) or to go manual')
+    cmd:option('-loadPreTrained', true, 'whether to load persisted model from disk vs. training afresh')
     cifar10.options = cmd:parse(arg or {})
     print('processing options ==>',cifar10.options)
     cifar10.trainLog = optim.Logger(paths.concat(cifar10.options.savePath, 'train.log'))
@@ -76,7 +77,7 @@ cifar10.setup = function ()
         cifar10.noutputs)
 end
 
-cifar10.loop = function ()
+cifar10.trainAndValidate = function ()
     for i =1,cifar10.options.maxEpochs do
         --train the model
         modelcifar10.train(
@@ -98,7 +99,12 @@ end
 
 cifar10.main = function ()
     cifar10.setup()
-    cifar10.loop()
+    local lastSavedModel = paths.concat(cifar10.options.savePath, 'model.net')
+    if cifar10.options.loadPreTrained and paths.filep(lastSavedModel) then
+        cifar10.model = torch.load(lastSavedModel)
+    else
+        cifar10.trainAndValidate()
+    end
 end
 
 cifar10.visualizeImage = loadcifar10.visualizeImage
