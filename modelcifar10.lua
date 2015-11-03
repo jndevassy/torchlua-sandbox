@@ -32,8 +32,7 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
 end
 
 modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger)
-    -- local vars
-    local parameters,df_dW = model:getParameters()
+    local w,dE_dw = model:getParameters()
     local time = sys.clock()
     -- set model to training mode (for modules that differ in training and testing, like Dropout)
     model:training()
@@ -49,43 +48,48 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
         local inputs = {}
         local targets = {}
         for i = t,math.min(t+options.batchSize-1,dataSet.data:size(1)) do
-            -- load new sample
+            -- load new sample and target
             local input = dataSet.data[shuffle[i]]
             local target = dataSet.label[shuffle[i]]
             table.insert(inputs, input)
             table.insert(targets, target)
         end
-        -- create closure to evaluate f and df/dW
-        local feval = function()
+        -- create closure to evaluate cost E and dE/dw
+        local gradientDescent = function(weights)
+            -- overwrite the weights if they are being reset by client; w <= weights
+            if w ~= weights then
+                w:copy(weights)
+            end
             -- reset gradients
-            df_dW:zero()
-            -- f is the average of all criterions
-            local f = 0
-            -- evaluate function for complete mini batch
+            dE_dw:zero()
+            -- E is the average of all criterions (cost)
+            local E = 0
+            -- evaluate cost and gradients for complete mini batch
             for i = 1,#inputs do
-                -- estimate f
+                -- estimate cost E
                 local output = model:forward(inputs[i])
                 local err = criterion:forward(output, targets[i])
-                f = f + err
-                -- estimate df/dW
-                local df_do = criterion:backward(output, targets[i])
-                --weighted delta from next layer brought back times gradient of previous layer activation:
-                local gradWrtInput = model:updateGradInput(inputs[i],df_do)
-                --gradWrtInput at next layer times the previous layer activation:
-                model:accGradParameters(inputs[i],df_do)
+                E = E + err
+                -- estimate dE_dw
+                local dE_do = criterion:backward(output, targets[i])
+                --gradient wrt input: weighted delta from next layer times gradient of previous layer activation
+                model:updateGradInput(inputs[i],dE_do)
+                --gradient wrt parameters/weights: gradient wrt input at next layer times the previous layer activation
+                model:accGradParameters(inputs[i],dE_do)
                 -- update confusion
                 confusionMatrix:add(output, targets[i])
             end
-            -- normalize gradients and f
-            df_dW:div(#inputs)
-            f = f/#inputs
+            -- normalize gradients and cost E
+            dE_dw:div(#inputs)
+            E = E/#inputs
         end
-        -- update parameters using df_dW as per
-        -- parameters = parameters - learningRate * df_dW
-        feval()
+        -- perform gradient descent for mini batch just created
+        gradientDescent(w)
+        -- update parameters/weights using dE_dw as per:
+        -- w = w - learningRate * dE_dw
         model:updateParameters(options.learningRate)
     end
-    -- time taken
+    -- time taken for complete dataSet
     time = sys.clock() - time
     time = time / dataSet.data:size(1)
     print("\n==> time to learn 1 sample = " .. (time*1000) .. 'ms')
@@ -102,9 +106,39 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     os.execute('mkdir -p ' .. sys.dirname(filename))
     print('==> saving model to '..filename)
     torch.save(filename, model)
-    -- next epoch
+    -- prepare for next epoch
     confusionMatrix:zero()
     options.trainingEpoch = options.trainingEpoch + 1
+end
+
+modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
+    local time = sys.clock()
+    -- set model to evaluate mode (for modules that differ in training and testing, like Dropout)
+    model:evaluate()
+    -- test over test data
+    print('==> testing on test set:')
+    for t = 1,dataSet.data:size(1) do
+        -- disp progress
+        xlua.progress(t, dataSet.data:size(1))
+        -- get new sample
+        local input = dataSet.data[t]
+        local target = dataSet.label[t]
+        -- test sample
+        local pred = model:forward(input)
+        confusionMatrix:add(pred, target)
+    end
+    -- timing
+    time = sys.clock() - time
+    time = time / dataSet.data:size(1)
+    print("\n==> time to test 1 sample = " .. (time*1000) .. 'ms')
+    -- print confusion matrix
+    print(confusionMatrix)
+    -- update log/plot
+    logger:add{['% mean class accuracy (test set)'] = confusionMatrix.totalValid * 100}
+    logger:style{['% mean class accuracy (test set)'] = '-'}
+    logger:plot()
+    -- next iteration:
+    confusionMatrix:zero()
 end
 
 return modelcifar10

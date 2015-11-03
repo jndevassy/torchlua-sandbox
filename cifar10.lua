@@ -42,7 +42,7 @@ cifar10.testFile = 'cifar10-test.t7'
 cifar10.downloadCommand = 'wget -c https://s3.amazonaws.com/torch7/data/cifar10torchsmall.zip'
 cifar10.unzipCommand = 'unzip cifar10torchsmall.zip'
 
-cifar10.main = function ()
+cifar10.setup = function ()
     gfx.startserver()
     local cmd = torch.CmdLine()
     cmd:option('-savePath', '/home/mit/projects/thtests/results', 'subdirectory to save/log experiments in')
@@ -70,14 +70,30 @@ cifar10.main = function ()
         cifar10.npoolsize,
         cifar10.nMLPHiddenUnits,
         cifar10.noutputs)
-    --train the model
-    modelcifar10.train(
-        cifar10.trainSet,
-        cifar10.model,
-        cifar10.criterion,
-        cifar10.options,
-        cifar10.confusionMatrix,
-        cifar10.trainLog)
+end
+
+cifar10.loop = function ()
+    while true do
+        --train the model
+        modelcifar10.train(
+            cifar10.trainSet,
+            cifar10.model,
+            cifar10.criterion,
+            cifar10.options,
+            cifar10.confusionMatrix,
+            cifar10.trainLog)
+        --test the model
+        modelcifar10.test(
+            cifar10.testSet,
+            cifar10.model,
+            confusionMatrix,
+            cifar10.testLog)
+    end
+end
+
+cifar10.main = function ()
+    cifar10.setup()
+    cifar10.loop()
 end
 
 return cifar10
