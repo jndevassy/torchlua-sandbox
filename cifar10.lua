@@ -86,7 +86,7 @@ cifar10.loop = function ()
         modelcifar10.test(
             cifar10.testSet,
             cifar10.model,
-            confusionMatrix,
+            cifar10.confusionMatrix,
             cifar10.testLog)
     end
 end
