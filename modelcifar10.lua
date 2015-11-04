@@ -6,8 +6,9 @@ modelcifar10.buildCriterion = function ()
     return crit
 end
 
-modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,filterSize,poolSize,mlpHiddenUnits,outputUnits,useDropout)
+modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,filterSize,poolSize,mlpHiddenUnits,outputUnits)
     local newSize = nRowsOrCols
+    local normkernel = image.gaussian1D(7)
     local model = nn.Sequential()
     -- stage 1 : filter bank -> squashing -> L2 pooling -> normalization
     model:add(nn.SpatialConvolutionMM(inputFeatureMaps, filterKernels[1], filterSize, filterSize))
@@ -24,16 +25,14 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     -- stage 3 : standard 2-layer neural network
     --new feature maps are of size newSize x newSize and there are filterKernels[2] of these; flatten them out
     --this is the input layer for the fully connected mlp
-    model:add(nn.Reshape(filterKernels[2]*newSize*newSize))
-    if useDropout then
-        model:add(nn.Dropout(0.5))
-    end
+    model:add(nn.View(filterKernels[2]*newSize*newSize))
+    model:add(nn.Dropout(0.5))
     --1st mlp hidden layer to have mlpHiddenUnits[1] number of units
     model:add(nn.Linear(filterKernels[2]*newSize*newSize, mlpHiddenUnits[1]))
-    model:add(nn.ReLU())
+    model:add(nn.Tanh())
     --2nd mlp hidden layer to have mlpHiddenUnits[2] number of units
     model:add(nn.Linear(mlpHiddenUnits[1], mlpHiddenUnits[2]))
-    model:add(nn.ReLU())
+    model:add(nn.Tanh())
     --output layer to have outputUnits units
     model:add(nn.Linear(mlpHiddenUnits[2], outputUnits))
     --convert output to log-probabilities

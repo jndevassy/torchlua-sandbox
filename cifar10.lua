@@ -21,10 +21,7 @@ cifar10.initialize = function ()
     cmd:option('-batchSize', 1, 'mini-batch size (1 = pure stochastic)')
     cmd:option('-learningRate', 1e-3, 'learning rate at t=0')
     cmd:option('-trainingEpoch', 0, 'training iteration start value')
-    cmd:option('-maxEpochs', 2, 'max training epochs')
-    cmd:option('-useDropout', false, 'whether to use dropout in model')
     cmd:option('-useOptimizer', true, 'whether to use optimizer(SGD) or to go manual')
-    cmd:option('-loadPreTrained', true, 'whether to load persisted model from disk vs. training afresh')
     cifar10.options = cmd:parse(arg or {})
     print('processing options ==>',cifar10.options)
     -- input and model dims:
@@ -90,14 +87,13 @@ cifar10.createModel = function (usePersistedModel)
             cifar10.nfiltsize,
             cifar10.npoolsize,
             cifar10.nMLPHiddenUnits,
-            cifar10.noutputs,
-            cifar10.options.useDropout)
+            cifar10.noutputs)
         print 'created new model and criterion'
     end
 end
 
-cifar10.trainAndValidateModel = function (iterations)
-    for i =1,iterations do
+cifar10.trainAndValidate = function (maxTrainingEpochs)
+    for i =1,maxTrainingEpochs do
         --train the model
         modelcifar10.train(
             cifar10.trainSet,
@@ -122,9 +118,9 @@ cifar10.setup = function ()
     cifar10.createDatasets()
 end
 
-cifar10.run = function ()
-    cifar10.createModel(cifar10.options.loadPreTrained)
-    cifar10.trainAndValidateModel(cifar10.options.maxEpochs)
+cifar10.run = function (usePersistedModel,maxTrainingEpochs)
+    cifar10.createModel(usePersistedModel)
+    cifar10.trainAndValidate(maxTrainingEpochs)
 end
 
 cifar10.visualizeImage = loadcifar10.visualizeImage
@@ -133,9 +129,9 @@ cifar10.trySingle = function (dataSet,sampleNum)
     modelcifar10.testSingleImage(dataSet,cifar10.model,cifar10.classes,sampleNum)
 end
 
-cifar10.main = function (...)
+cifar10.main = function (usePersistedModel,maxTrainingEpochs)
     cifar10.setup()
-    cifar10.run()
+    cifar10.run(usePersistedModel,maxTrainingEpochs)
 end
 
 return cifar10
