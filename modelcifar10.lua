@@ -1,6 +1,12 @@
 modelcifar10 = {}
 
-modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,filterSize,poolSize,mlpHiddenUnits,outputUnits)
+modelcifar10.buildCriterion = function ()
+    local crit = nn.ClassNLLCriterion()
+    crit:cuda()
+    return crit
+end
+
+modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,filterSize,poolSize,mlpHiddenUnits,outputUnits,useDropout)
     local newSize = nRowsOrCols
     local model = nn.Sequential()
     -- stage 1 : filter bank -> squashing -> L2 pooling -> normalization
@@ -19,7 +25,9 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     --new feature maps are of size newSize x newSize and there are filterKernels[2] of these; flatten them out
     --this is the input layer for the fully connected mlp
     model:add(nn.Reshape(filterKernels[2]*newSize*newSize))
-    model:add(nn.Dropout(0.5))
+    if useDropout then
+        model:add(nn.Dropout(0.5))
+    end
     --1st mlp hidden layer to have mlpHiddenUnits[1] number of units
     model:add(nn.Linear(filterKernels[2]*newSize*newSize, mlpHiddenUnits[1]))
     model:add(nn.ReLU())
@@ -31,8 +39,7 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     --convert output to log-probabilities
     model:add(nn.LogSoftMax())
     model:cuda()
-    local crit = nn.ClassNLLCriterion()
-    crit:cuda()
+    local crit = modelcifar10.buildCriterion()
     return model,crit
 end
 

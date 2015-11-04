@@ -22,6 +22,7 @@ cifar10.initialize = function ()
     cmd:option('-learningRate', 1e-3, 'learning rate at t=0')
     cmd:option('-trainingEpoch', 0, 'training iteration start value')
     cmd:option('-maxEpochs', 2, 'max training epochs')
+    cmd:option('-useDropout', false, 'whether to use dropout in model')
     cmd:option('-useOptimizer', true, 'whether to use optimizer(SGD) or to go manual')
     cmd:option('-loadPreTrained', true, 'whether to load persisted model from disk vs. training afresh')
     cifar10.options = cmd:parse(arg or {})
@@ -63,7 +64,7 @@ cifar10.initialize = function ()
     cifar10.unzipCommand = 'unzip cifar10torchsmall.zip'
 end
 
-cifar10.createDatasetsAndModel = function ()
+cifar10.createDatasets = function ()
     -- load datasets:
     cifar10.trainSet,cifar10.testSet = loadcifar10.loadData(
         cifar10.trainFile,
@@ -72,15 +73,27 @@ cifar10.createDatasetsAndModel = function ()
         cifar10.unzipCommand)
     -- normalize datasets
     loadcifar10.normalizeData(cifar10.trainSet)
-    --build model and criterion
-    cifar10.model,cifar10.criterion = modelcifar10.buildConvNet(
-        cifar10.nfeaturemaps,
-        cifar10.nRowsOrCols,
-        cifar10.nfilterKernelsByLayer,
-        cifar10.nfiltsize,
-        cifar10.npoolsize,
-        cifar10.nMLPHiddenUnits,
-        cifar10.noutputs)
+end
+
+cifar10.createModel = function (usePersistedModel)
+    local lastSavedModel = paths.concat(cifar10.options.savePath, 'model.net')
+    if usePersistedModel and paths.filep(lastSavedModel) then
+        cifar10.model = torch.load(lastSavedModel)
+        cifar10.criterion = modelcifar10.buildCriterion()
+        print 'loaded pre-trained model from disk and created new criterion'
+    else
+        --build model and criterion
+        cifar10.model,cifar10.criterion = modelcifar10.buildConvNet(
+            cifar10.nfeaturemaps,
+            cifar10.nRowsOrCols,
+            cifar10.nfilterKernelsByLayer,
+            cifar10.nfiltsize,
+            cifar10.npoolsize,
+            cifar10.nMLPHiddenUnits,
+            cifar10.noutputs,
+            cifar10.options.useDropout)
+        print 'created new model and criterion'
+    end
 end
 
 cifar10.trainAndValidateModel = function (iterations)
@@ -104,14 +117,14 @@ cifar10.trainAndValidateModel = function (iterations)
     end
 end
 
-cifar10.runModel = function (usePersistedModel)
-    local lastSavedModel = paths.concat(cifar10.options.savePath, 'model.net')
-    if usePersistedModel and paths.filep(lastSavedModel) then
-        cifar10.model = torch.load(lastSavedModel)
-        print 'loaded pre-trained model from disk'
-    else
-        cifar10.trainAndValidateModel(cifar10.options.maxEpochs)
-    end
+cifar10.setup = function ()
+    cifar10.initialize()
+    cifar10.createDatasets()
+end
+
+cifar10.run = function ()
+    cifar10.createModel(cifar10.options.loadPreTrained)
+    cifar10.trainAndValidateModel(cifar10.options.maxEpochs)
 end
 
 cifar10.visualizeImage = loadcifar10.visualizeImage
@@ -120,14 +133,9 @@ cifar10.trySingle = function (dataSet,sampleNum)
     modelcifar10.testSingleImage(dataSet,cifar10.model,cifar10.classes,sampleNum)
 end
 
-cifar10.setup = function ()
-    cifar10.initialize()
-    cifar10.createDatasetsAndModel()
-end
-
 cifar10.main = function (...)
     cifar10.setup()
-    cifar10.runModel(cifar10.options.loadPreTrained)
+    cifar10.run()
 end
 
 return cifar10
