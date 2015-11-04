@@ -36,7 +36,7 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     return model,crit
 end
 
-modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger,sgdOptimizeCall)
+modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger,sgdOptimizeCall,optimizerState)
     local w,dE_dw = model:getParameters()
     local time = sys.clock()
     -- set model to training mode (for modules that differ in training and testing, like Dropout)
@@ -46,8 +46,8 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     -- shuffle at each epoch
     local shuffle = torch.randperm(dataSet.data:size(1))
     -- do one epoch
-    print('==> doing epoch on training data:')
-    print("==> online epoch # " .. options.trainingEpoch .. ' [batchSize = ' .. options.batchSize .. ']')
+    print('==> TRAINING EPOCH: ---')
+    print("==> online# " .. options.trainingEpoch .. ' [batchSize = ' .. options.batchSize .. ']')
     for t = 1,dataSet.data:size(1),options.batchSize do
         -- disp progress
         xlua.progress(t, dataSet.data:size(1))
@@ -101,13 +101,7 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
             -- w = w - learningRate * dE_dw
             model:updateParameters(options.learningRate)
         else
-            local optimState = {
-                learningRate = options.learningRate,
-                weightDecay = 0,
-                momentum = 0,
-                learningRateDecay = 1e-7
-            }
-            sgdOptimizeCall(gradientDescent,w,optimState)
+            sgdOptimizeCall(gradientDescent,w,optimizerState)
         end
     end
     -- time taken for complete dataSet
@@ -135,7 +129,7 @@ modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
     model:evaluate()
     confusionMatrix:zero()
     -- test over test data
-    print('==> testing on test set:')
+    print('==> TESTING: ---')
     for t = 1,dataSet.data:size(1) do
         -- disp progress
         xlua.progress(t, dataSet.data:size(1))
