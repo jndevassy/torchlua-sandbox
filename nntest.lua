@@ -410,7 +410,7 @@ manualTrainModel = function (theModel,crit)
     trainLogger:style{['% mean class accuracy (train set)'] = '-'}
     trainLogger:plot()
     -- save/log current net
-    local filename = paths.concat(opt.save, 'model.net')
+    local filename = paths.concat(opt.save, 'svhnmodel.net')
     os.execute('mkdir -p ' .. sys.dirname(filename))
     print('==> saving model to '..filename)
     torch.save(filename, model)
