@@ -42,7 +42,7 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     return model,crit
 end
 
-modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger,sgdOptimizeCall,optimizerState)
+modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger,sgdOptimizeCall,optimizerState,modelFilename)
     local w,dE_dw = model:getParameters()
     local time = sys.clock()
     -- set model to training mode (for modules that differ in training and testing, like Dropout)
@@ -123,7 +123,7 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     logger:style{['% mean class accuracy (train set)'] = '-'}
     logger:plot()
     -- save/log current net
-    local filename = paths.concat(options.savePath, 'model.net')
+    local filename = paths.concat(options.savePath, modelFilename)
     os.execute('mkdir -p ' .. sys.dirname(filename))
     print('==> saving model to '..filename)
     torch.save(filename, model)

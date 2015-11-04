@@ -59,6 +59,8 @@ cifar10.initialize = function ()
     cifar10.testFile = 'cifar10-test.t7'
     cifar10.downloadCommand = 'wget -c https://s3.amazonaws.com/torch7/data/cifar10torchsmall.zip'
     cifar10.unzipCommand = 'unzip cifar10torchsmall.zip'
+    -- file to save/load model
+    cifar10.modelfile = 'cifarmodel.net'
 end
 
 cifar10.createDatasets = function ()
@@ -73,7 +75,7 @@ cifar10.createDatasets = function ()
 end
 
 cifar10.createModel = function (usePersistedModel)
-    local lastSavedModel = paths.concat(cifar10.options.savePath, 'model.net')
+    local lastSavedModel = paths.concat(cifar10.options.savePath, cifar10.modelfile)
     if usePersistedModel and paths.filep(lastSavedModel) then
         cifar10.model = torch.load(lastSavedModel)
         cifar10.criterion = modelcifar10.buildCriterion()
@@ -103,7 +105,8 @@ cifar10.trainAndValidate = function (maxTrainingEpochs)
             cifar10.confusionMatrix,
             cifar10.trainLog,
             cifar10.SGDOptimize,
-            cifar10.optimizerState)
+            cifar10.optimizerState,
+            cifar10.modelfile)
         --test the model
         modelcifar10.test(
             cifar10.testSet,
