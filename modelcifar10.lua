@@ -119,9 +119,7 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     -- update logger/plot
     --totalValid is the sum of the diagonal of the confusion matrix divided by the sum of the matrix. 
     --averageValid is the average of all diagonals divided by their respective rows.
-    logger:add{['% mean class accuracy (train set)'] = confusionMatrix.totalValid * 100}
-    logger:style{['% mean class accuracy (train set)'] = '-'}
-    logger:plot()
+    logger:add{["1"] = confusionMatrix.totalValid * 100}
     -- save/log current net
     local filename = paths.concat(options.savePath, modelFilename)
     os.execute('mkdir -p ' .. sys.dirname(filename))
@@ -155,9 +153,7 @@ modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
     -- print confusion matrix
     print(confusionMatrix)
     -- update log/plot
-    logger:add{['% mean class accuracy (test set)'] = confusionMatrix.totalValid * 100}
-    logger:style{['% mean class accuracy (test set)'] = '-'}
-    logger:plot()
+    logger:add{["1"] = confusionMatrix.totalValid * 100}
 end
 
 modelcifar10.testSingleImage = function (dataSet,model,classes,sampleNum)

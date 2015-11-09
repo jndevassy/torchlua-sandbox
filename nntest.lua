@@ -227,27 +227,6 @@ buildLeNet = function (inputChannels,inputSize)
     return net,crit
 end
 
-simplePlot = function ()
-    if xlua.require('gnuplot') then
-        symbols={}
-        symbols[1]={}
-        for i = 1,100 do
-            table.insert(symbols[1],2*i -10)
-        end
-        symbols[2]={}
-        for i = 1,100 do
-            table.insert(symbols[2],100*math.log10(i))
-        end
-        plots={}
-        for name,list in pairs(symbols) do
-            plotlist = torch.Tensor(#list)
-            for j = 1,#list do plotlist[j] = list[j] end
-            table.insert(plots,{tostring(name),plotlist,'-'})
-        end
-        gnuplot.plot(plots)
-    end
-end
-
 trainModel = function (theModel,crit)
     --   + construct mini-batches on the fly
     --   + define a closure to estimate (a noisy) loss
@@ -490,6 +469,39 @@ checkNumericalGrad = function(theModel,crit)
     --
     local diff = gradParameters - numgrad
     print (diff:max(),diff:sum(),diff:mean())
+end
+
+get_key_for_value = function (t,value )
+--[[> t = {["foo"] = "bar", [123] = 456}
+    > = t.foo
+    bar
+    > = t[123]
+    456]]--
+    for k,v in pairs(t) do
+        if v==value then return k end
+    end
+    return nil
+end
+
+simplePlot = function ()
+    if xlua.require('gnuplot') then
+        symbols={}
+        symbols[1]={}
+        for i = 1,100 do
+            table.insert(symbols[1],2*i -10)
+        end
+        symbols[2]={}
+        for i = 1,100 do
+            table.insert(symbols[2],100*math.log10(i))
+        end
+        plots={}
+        for name,list in pairs(symbols) do
+            plotlist = torch.Tensor(#list)
+            for j = 1,#list do plotlist[j] = list[j] end
+            table.insert(plots,{tostring(name),plotlist,'-'})
+        end
+        gnuplot.plot(plots)
+    end
 end
 
 loadSVHNData()

@@ -124,9 +124,37 @@ end
 cifar10.run = function (usePersistedModel,maxTrainingEpochs)
     cifar10.createModel(usePersistedModel)
     cifar10.trainAndValidate(maxTrainingEpochs)
+    cifar10.plot()
 end
 
-cifar10.visualizeImage = loadcifar10.visualizeImage
+cifar10.plot = function ()
+    --plot mean class accuracy for the training and test sets
+    local data = {
+        {
+            key    = 'Mean Training Accuracy',
+            values = torch.Tensor(cifar10.trainLog.symbols["1"]),
+            color  = '#ff7f0e',
+        },
+        {
+            key = 'Mean Test Accuracy',
+            values = torch.Tensor(cifar10.testLog.symbols["1"]),
+            color  = '#2ca02c',
+        }
+    }
+    local config = {
+        chart = 'line', 
+        width = 640,
+        height = 480,
+        xLabel = "iterations(#)",
+        yLabel = "accuracy(%)",
+        useInteractiveGuideline = true
+    }
+    gfx.chart(data,config)
+end
+
+cifar10.visualizeImage = function (dataSet,sampleNum)
+    gfx.image(dataSet.data[sampleNum])
+end
 
 cifar10.trySingle = function (dataSet,sampleNum)
     modelcifar10.testSingleImage(dataSet,cifar10.model,cifar10.classes,sampleNum)

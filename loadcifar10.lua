@@ -29,9 +29,5 @@ loadcifar10.normalizeData = function (dataSet)
     end
 end
 
-loadcifar10.visualizeImage = function (dataSet,sampleNum)
-    gfx.image(dataSet.data[sampleNum])
-end
-
 return loadcifar10
 
