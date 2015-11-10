@@ -42,7 +42,7 @@ modelcifar10.buildConvNet = function(inputFeatureMaps,nRowsOrCols,filterKernels,
     return model,crit
 end
 
-modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,logger,sgdOptimizeCall,optimizerState,modelFilename)
+modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,chartname,logger,sgdOptimizeCall,optimizerState,modelFilename)
     local w,dE_dw = model:getParameters()
     local time = sys.clock()
     -- set model to training mode (for modules that differ in training and testing, like Dropout)
@@ -119,7 +119,7 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     -- update logger/plot
     --totalValid is the sum of the diagonal of the confusion matrix divided by the sum of the matrix. 
     --averageValid is the average of all diagonals divided by their respective rows.
-    logger:add{["1"] = confusionMatrix.totalValid * 100}
+    logger:add{[chartname] = confusionMatrix.totalValid * 100}
     -- save/log current net
     local filename = paths.concat(options.savePath, modelFilename)
     os.execute('mkdir -p ' .. sys.dirname(filename))
@@ -127,7 +127,7 @@ modelcifar10.train = function (dataSet,model,criterion,options,confusionMatrix,l
     torch.save(filename, model)
 end
 
-modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
+modelcifar10.test = function (dataSet,model,confusionMatrix,chartname,logger)
     local time = sys.clock()
     -- set model to evaluate mode (for modules that differ in training and testing, like Dropout)
     model:evaluate()
@@ -153,7 +153,7 @@ modelcifar10.test = function (dataSet,model,confusionMatrix,logger)
     -- print confusion matrix
     print(confusionMatrix)
     -- update log/plot
-    logger:add{["1"] = confusionMatrix.totalValid * 100}
+    logger:add{[chartname] = confusionMatrix.totalValid * 100}
 end
 
 modelcifar10.testSingleImage = function (dataSet,model,classes,sampleNum)

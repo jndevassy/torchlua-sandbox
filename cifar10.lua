@@ -15,6 +15,7 @@ cifar10 = {}
 cifar10.initialize = function ()
     -- graphics server
     gfx.startserver()
+    cifar10.dydisplay = require 'display'
     -- cmd and options
     local cmd = torch.CmdLine()
     cmd:option('-savePath', '/home/mit/projects/thtests/results', 'subdirectory to save/log experiments in')
@@ -45,8 +46,10 @@ cifar10.initialize = function ()
     -- ideally only diagonal elements should get updated i.e target label==predicted output
     cifar10.confusionMatrix = optim.ConfusionMatrix(cifar10.classes)
     -- log results to files
-    cifar10.trainLog = optim.Logger(paths.concat(cifar10.options.savePath, 'train.log'))
-    cifar10.testLog = optim.Logger(paths.concat(cifar10.options.savePath, 'test.log'))
+    cifar10.trainChartName = 'train'
+    cifar10.testChartName = 'test'
+    cifar10.trainLog = optim.Logger(paths.concat(cifar10.options.savePath,cifar10.trainChartName..'.log'))
+    cifar10.testLog = optim.Logger(paths.concat(cifar10.options.savePath,cifar10.testChartName..'.log'))
     -- optimizer method
     cifar10.SGDOptimize = optim.sgd
     cifar10.optimizerState = {
@@ -103,6 +106,7 @@ cifar10.trainAndValidate = function (maxTrainingEpochs)
             cifar10.criterion,
             cifar10.options,
             cifar10.confusionMatrix,
+            cifar10.trainChartName,
             cifar10.trainLog,
             cifar10.SGDOptimize,
             cifar10.optimizerState,
@@ -112,6 +116,7 @@ cifar10.trainAndValidate = function (maxTrainingEpochs)
             cifar10.testSet,
             cifar10.model,
             cifar10.confusionMatrix,
+            cifar10.testChartName,
             cifar10.testLog)
     end
 end
@@ -124,20 +129,21 @@ end
 cifar10.run = function (usePersistedModel,maxTrainingEpochs)
     cifar10.createModel(usePersistedModel)
     cifar10.trainAndValidate(maxTrainingEpochs)
-    cifar10.plot()
+    cifar10.plotNVD3()
+    cifar10.plotDyGraph()
 end
 
-cifar10.plot = function ()
+cifar10.plotNVD3 = function ()
     --plot mean class accuracy for the training and test sets
     local data = {
         {
             key    = 'Mean Training Accuracy',
-            values = torch.Tensor(cifar10.trainLog.symbols["1"]),
+            values = torch.Tensor(cifar10.trainLog.symbols[cifar10.trainChartName]),
             color  = '#ff7f0e',
         },
         {
             key = 'Mean Test Accuracy',
-            values = torch.Tensor(cifar10.testLog.symbols["1"]),
+            values = torch.Tensor(cifar10.testLog.symbols[cifar10.testChartName]),
             color  = '#2ca02c',
         }
     }
@@ -150,6 +156,20 @@ cifar10.plot = function ()
         useInteractiveGuideline = true
     }
     gfx.chart(data,config)
+end
+
+cifar10.plotDyGraph = function ()
+    local trainacc = {}
+    for i,v in pairs(cifar10.trainLog.symbols[cifar10.trainChartName]) do
+        table.insert(trainacc,{i,v})
+    end
+    local testacc = {}
+    for i,v in pairs(cifar10.testLog.symbols[cifar10.testChartName]) do
+        table.insert(testacc,{i,v})
+    end
+    --plot mean class accuracy for the training and test sets
+    cifar10.dydisplay.plot(trainacc,{labels={'epoch','accuracy'},title='training acc'})
+    cifar10.dydisplay.plot(testacc,{labels={'epoch','accuracy'},title='test acc'})
 end
 
 cifar10.visualizeImage = function (dataSet,sampleNum)
