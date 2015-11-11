@@ -13,9 +13,9 @@ require 'modelcifar10.lua'
 cifar10 = {}
 
 cifar10.initialize = function ()
-    -- graphics server
-    gfx.startserver()
-    cifar10.dydisplay = require 'display'
+    --graphics server
+    gfx.startserver(8501) --start server on port 8501
+    cifar10.dydisplay = require 'display' --start server in a separate session on fixed port 8000 using $th -ldisplay.start
     -- cmd and options
     local cmd = torch.CmdLine()
     cmd:option('-savePath', '/home/mit/projects/thtests/results', 'subdirectory to save/log experiments in')
