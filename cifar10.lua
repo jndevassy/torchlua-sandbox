@@ -5,7 +5,6 @@ require 'cudnn'
 require 'optim'
 require 'xlua'
 require 'image'
-require 'gfx.js'
 -- project files here:
 require 'loadcifar10.lua'
 require 'modelcifar10.lua'
@@ -13,9 +12,10 @@ require 'modelcifar10.lua'
 cifar10 = {}
 
 cifar10.initialize = function ()
-    --graphics server
-    gfx.startserver(8501) --start server on port 8501
-    cifar10.dydisplay = require 'display' --start server in a separate session on fixed port 8000 using $th -ldisplay.start
+    --graphics servers
+    cifar10.gfx = require 'gfx.js'
+    cifar10.gfx.startserver(8501) --start server on port 8501
+    cifar10.dygraph = require 'display' --start server in a separate session on fixed port 8000 using $th -ldisplay.start
     -- cmd and options
     local cmd = torch.CmdLine()
     cmd:option('-savePath', '/home/mit/projects/thtests/results', 'subdirectory to save/log experiments in')
@@ -155,7 +155,7 @@ cifar10.plotNVD3 = function ()
         yLabel = "accuracy(%)",
         useInteractiveGuideline = true
     }
-    gfx.chart(data,config)
+    cifar10.gfx.chart(data,config)
 end
 
 cifar10.plotDyGraph = function ()
@@ -168,15 +168,17 @@ cifar10.plotDyGraph = function ()
         table.insert(testacc,{i,v})
     end
     --plot mean class accuracy for the training and test sets
-    cifar10.dydisplay.plot(trainacc,{labels={'epoch','accuracy'},title='training acc'})
-    cifar10.dydisplay.plot(testacc,{labels={'epoch','accuracy'},title='test acc'})
+    cifar10.dygraph.plot(trainacc,{labels={'epoch','accuracy'},title='training acc'})
+    cifar10.dygraph.plot(testacc,{labels={'epoch','accuracy'},title='test acc'})
 end
 
 cifar10.visualizeImage = function (dataSet,sampleNum)
-    gfx.image(dataSet.data[sampleNum])
+    cifar10.gfx.image(dataSet.data[sampleNum])
+    cifar10.dygraph.image(dataSet.data[sampleNum])
 end
 
 cifar10.trySingle = function (dataSet,sampleNum)
+    cifar10.visualizeImage(dataSet,sampleNum)
     modelcifar10.testSingleImage(dataSet,cifar10.model,cifar10.classes,sampleNum)
 end
 

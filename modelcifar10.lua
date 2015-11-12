@@ -159,7 +159,6 @@ end
 modelcifar10.testSingleImage = function (dataSet,model,classes,sampleNum)
     -- get sample
     local input = dataSet.data[sampleNum]
-    gfx.image(input)
     local target = dataSet.label[sampleNum]
     -- test sample
     local predicted = model:forward(input)
