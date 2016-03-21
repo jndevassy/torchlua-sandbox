@@ -133,6 +133,17 @@ cifar10.run = function (usePersistedModel,maxTrainingEpochs)
     cifar10.plotDyGraph()
 end
 
+cifar10.printmodel = function (model)
+    for key,value in pairs(model) do
+        print(key)
+    end
+    for key,value in pairs(model.modules) do
+        print(key,value)
+    end
+    print(model.modules[1])
+    cifar10.gfx.image(cifar10.model.modules[4].weight)
+end
+
 cifar10.plotNVD3 = function ()
     --plot mean class accuracy for the training and test sets
     local data = {
