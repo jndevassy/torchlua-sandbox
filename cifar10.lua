@@ -1,7 +1,7 @@
 require 'torch'
+require 'cutorch'
 require 'nn'
 require 'cunn'
-require 'cudnn'
 require 'optim'
 require 'xlua'
 require 'image'
