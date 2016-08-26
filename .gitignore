@@ -22,6 +22,17 @@
 *.log
 *.net
 *.eps
+*.so
+*.png
+*.jpg
+
+#cmake files
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Makefile
+cmake_install.cmake
+install_manifest.txt
 
 #Visual Studio files
 *.[Oo]bj
